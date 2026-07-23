@@ -213,6 +213,54 @@ app.post("/api/designs", async (req: Request, res: Response) => {
   }
 });
 
+
+/// DELETE /api/designs/:id
+app.delete("/api/designs/:id", async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string; // Fixes TypeScript type error
+
+    // Query by MongoDB _id if valid, otherwise fallback to custom 'id' field
+    const query = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { id };
+
+    const result = await designsCollection.deleteOne(query);
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: "Design not found" });
+    }
+
+    res.json({ message: "Design deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting design:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/// patch /api/designs/:id
+app.put("/api/designs/:id", async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string; // Fixes TypeScript type error
+
+    // Query by MongoDB _id if valid, otherwise fallback to custom 'id' field
+    const query = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { id };
+
+    // Copy body and ensure immutable _id field isn't in $set payload
+    const updateData = { ...req.body };
+    delete updateData._id;
+
+    const result = await designsCollection.updateOne(query, {
+      $set: updateData,
+    });
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "Design not found" });
+    }
+
+    res.json({ message: "Design updated successfully" });
+  } catch (err) {
+    console.error("Error updating design:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 // GET /api/gallery
 // Query params: category, page, limit
 app.get("/api/gallery", async (req: Request, res: Response) => {
