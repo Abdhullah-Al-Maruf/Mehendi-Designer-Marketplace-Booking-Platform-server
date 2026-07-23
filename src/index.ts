@@ -3,11 +3,13 @@ import { MongoClient, ServerApiVersion, Db, Collection, ObjectId } from "mongodb
 import cors from "cors";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
+
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const groq = new Groq();
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
@@ -15,6 +17,11 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // ─── Database Connection Setup ───
 const uri = process.env.MONGODB_URI as string;
+
+if (!uri) {
+  throw new Error("MONGODB_URI environment variable is not set");
+}
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -27,8 +34,13 @@ let db: Db;
 let designsCollection: Collection;
 let galleryCollection: Collection;
 let bookingsCollection: Collection;
+let isConnected = false;
 
 async function connectDB() {
+  if (isConnected) {
+    return;
+  }
+  
   try {
     await client.connect();
     console.log("Connected to MongoDB");
@@ -36,14 +48,13 @@ async function connectDB() {
     designsCollection = db.collection("designs");
     galleryCollection = db.collection("gallery");
     bookingsCollection = db.collection("bookings");
+    isConnected = true;
   } catch (error) {
     console.error("Failed to connect to MongoDB:", error);
-    process.exit(1); // Exit process if DB connection fails
+    isConnected = false;
+    throw error;
   }
 }
-
-// Connect to MongoDB when the server starts
-connectDB();
 
 // ─── Helper Functions ───
 // Retry requests if Grok throws temporary 502/503/504 gateway errors
@@ -68,8 +79,13 @@ async function fetchWithRetry(
 // ─── Express Routes ───
 
 // Health check
-app.get("/", (req: Request, res: Response) => {
-  res.json({ message: "MehendiHub API Server Running", status: "ok" });
+app.get("/", async (req: Request, res: Response) => {
+  try {
+    await connectDB();
+    res.json({ message: "MehendiHub API Server Running", status: "ok", database: "connected" });
+  } catch (error) {
+    res.status(500).json({ message: "MehendiHub API Server Running", status: "error", database: "disconnected" });
+  }
 });
 
 
@@ -86,6 +102,7 @@ app.get("/", (req: Request, res: Response) => {
 // Query params: search, category, minRating, sort, page, limit
 app.get("/api/designs", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const {
       search = "",
       category = "",
@@ -146,6 +163,7 @@ app.get("/api/designs", async (req: Request, res: Response) => {
 /// GET /api/designs/:id
 app.get("/api/designs/:id", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const id = req.params.id as string; // Fixes TypeScript type error
 
     // Query by MongoDB _id if valid, otherwise fallback to custom 'id' field
@@ -167,6 +185,7 @@ app.get("/api/designs/:id", async (req: Request, res: Response) => {
 // POST /api/designs
 app.post("/api/designs", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const {
       title,
       artist,
@@ -217,6 +236,7 @@ app.post("/api/designs", async (req: Request, res: Response) => {
 /// DELETE /api/designs/:id
 app.delete("/api/designs/:id", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const id = req.params.id as string; // Fixes TypeScript type error
 
     // Query by MongoDB _id if valid, otherwise fallback to custom 'id' field
@@ -233,11 +253,13 @@ app.delete("/api/designs/:id", async (req: Request, res: Response) => {
     console.error("Error deleting design:", err);
     res.status(500).json({ error: "Internal server error" });
   }
+
 });
 
 /// patch /api/designs/:id
 app.put("/api/designs/:id", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const id = req.params.id as string; // Fixes TypeScript type error
 
     // Query by MongoDB _id if valid, otherwise fallback to custom 'id' field
@@ -265,6 +287,7 @@ app.put("/api/designs/:id", async (req: Request, res: Response) => {
 // Query params: category, page, limit
 app.get("/api/gallery", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const { category = "", page = "1", limit = "6" } = req.query;
 
     const pageNum = Math.max(1, parseInt(page as string, 10));
@@ -299,6 +322,7 @@ app.get("/api/gallery", async (req: Request, res: Response) => {
 // POST /api/bookings - Save booking record to MongoDB
 app.post("/api/bookings", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const {
       designId,
       designName,
@@ -344,6 +368,7 @@ app.post("/api/bookings", async (req: Request, res: Response) => {
 // GET /api/bookings
 app.get("/api/bookings", async (req: Request, res: Response) => {
   try {
+    await connectDB();
     const bookings = await bookingsCollection.find({}).sort({ createdAt: -1 }).toArray();
     res.json({ data: bookings });
   } catch (err) {
@@ -489,6 +514,13 @@ Be warm, professional, and encouraging!`;
 });
 // ─── Start Server ───
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+
+// For local development
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}
+
+// Export for Vercel serverless functions
+export default app;

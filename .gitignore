@@ -39,3 +39,4 @@ temp/
         package.json
         src/
         tsconfig.json
+.vercel
