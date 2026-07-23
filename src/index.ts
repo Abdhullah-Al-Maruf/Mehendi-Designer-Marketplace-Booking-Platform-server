@@ -227,7 +227,7 @@ app.delete("/api/designs/:id", async (req: Request, res: Response) => {
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: "Design not found" });
     }
-
+ 
     res.json({ message: "Design deleted successfully" });
   } catch (err) {
     console.error("Error deleting design:", err);
